@@ -3,20 +3,21 @@
 # requires-python = ">=3.11"
 # dependencies = ["pyyaml"]
 # ///
-"""List prospect tasks sorted by next_action_date, with overdue marking.
+"""List all vault tasks with a next_action, sorted by next_action_date.
 
-Reads prospect frontmatter from a directory like:
-    <PROSPECTS_DIR>/<ID> <Name>/<ID> <Name>.md
+Recursively scans a directory for markdown files whose frontmatter contains
+at least `next_action_date` or `next_action`. Designed to surface any actionable
+item across the vault (prospects, admin, delivery, etc.), not just prospects.
 
-Each file must have YAML frontmatter with at least:
-    id, status, next_action_date (optional), next_action (optional)
+Filename convention: '<JD-id> <Name>.md' where JD-id is e.g. '11.01' or '61.03'.
 
 Usage:
-    vault-tasks.py <prospects_dir>
+    vault-tasks.py [<dir>]    # defaults to current directory
 """
 
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass
 from datetime import date
@@ -24,63 +25,91 @@ from pathlib import Path
 
 import yaml
 
+_USE_COLOR = sys.stdout.isatty()
+
+
+def c(code: str, text: str) -> str:
+    if not _USE_COLOR:
+        return text
+    return f"\033[{code}m{text}\033[0m"
+
+
+RED = "31"
+GREEN = "32"
+YELLOW = "33"
+BLUE = "34"
+DIM = "2"
+BOLD = "1"
+
+JD_ID_RE = re.compile(r"^(\d{2}\.\d{2})\s+(.+)$")  # "11.01 Some Name"
+
 
 @dataclass
 class Task:
-    folder_name: str           # e.g. "11.01 Clermont School of Business"
-    status: str                # e.g. "contacted"
+    jd_id: str            # e.g. "11.01" or "" if filename doesn't match convention
+    name: str             # e.g. "Clermont School of Business"
+    status: str
     next_action_date: date | None
     next_action: str | None
 
     @property
     def is_overdue(self) -> bool:
-        if self.next_action_date is None:
-            return False
-        return self.next_action_date < date.today()
+        return self.next_action_date is not None and self.next_action_date < date.today()
 
     @property
-    def sort_key(self) -> tuple[int, date]:
-        # Dated tasks first (sorted by date), undated last.
+    def is_today(self) -> bool:
+        return self.next_action_date == date.today()
+
+    @property
+    def sort_key(self) -> tuple[int, date, str]:
+        # Dated first (by date), then undated (alphabetical by jd_id).
         if self.next_action_date is None:
-            return (1, date.max)
-        return (0, self.next_action_date)
+            return (1, date.max, self.jd_id)
+        return (0, self.next_action_date, self.jd_id)
 
 
 def parse_frontmatter(md_path: Path) -> dict | None:
-    """Extract the YAML frontmatter block from a markdown file. Return None if absent or malformed."""
+    """Extract YAML frontmatter. Returns None only if no frontmatter present."""
     text = md_path.read_text(encoding="utf-8")
     if not text.startswith("---\n"):
         return None
-    # Find the closing '---' on its own line.
     end = text.find("\n---\n", 4)
     if end == -1:
         return None
-    fm_text = text[4:end]
     try:
-        data = yaml.safe_load(fm_text)
+        data = yaml.safe_load(text[4:end])
     except yaml.YAMLError:
         return None
     return data if isinstance(data, dict) else None
 
 
-def load_tasks(prospects_dir: Path) -> list[Task]:
+def is_task(fm: dict) -> bool:
+    """A task is any note with at least a next_action_date or next_action."""
+    return "next_action_date" in fm or "next_action" in fm
+
+
+def split_jd_id(stem: str) -> tuple[str, str]:
+    """Split 'XX.XX Name' into ('XX.XX', 'Name'). Returns ('', stem) if no match."""
+    m = JD_ID_RE.match(stem)
+    if m:
+        return m.group(1), m.group(2)
+    return "", stem
+
+
+def load_tasks(root: Path) -> list[Task]:
     tasks: list[Task] = []
-    for folder in sorted(prospects_dir.iterdir()):
-        if not folder.is_dir():
-            continue
-        md_path = folder / f"{folder.name}.md"
-        if not md_path.is_file():
-            continue
+    for md_path in root.rglob("*.md"):
         fm = parse_frontmatter(md_path)
-        if fm is None:
+        if fm is None or not is_task(fm):
             continue
-        # next_action_date: PyYAML parses ISO dates to datetime.date automatically.
         nad = fm.get("next_action_date")
         if nad is not None and not isinstance(nad, date):
-            nad = None  # malformed, ignore silently
+            nad = None
+        jd_id, name = split_jd_id(md_path.stem)
         tasks.append(
             Task(
-                folder_name=folder.name,
+                jd_id=jd_id,
+                name=name,
                 status=str(fm.get("status", "?")),
                 next_action_date=nad,
                 next_action=fm.get("next_action"),
@@ -91,31 +120,60 @@ def load_tasks(prospects_dir: Path) -> list[Task]:
 
 def format_tasks(tasks: list[Task]) -> str:
     if not tasks:
-        return "No prospects found."
-    # Column widths based on actual data.
-    name_w = max(len(t.folder_name) for t in tasks)
+        return "No tasks found."
+    today = date.today()
+    jd_w = max(len(t.jd_id) for t in tasks)
+    name_w = max(len(t.name) for t in tasks)
     status_w = max(len(t.status) for t in tasks)
     lines = []
     for t in sorted(tasks, key=lambda x: x.sort_key):
-        marker = "!" if t.is_overdue else " "
-        date_str = t.next_action_date.isoformat() if t.next_action_date else "   —     "
+        # Determine visual style by temporal category.
+
+        if t.next_action_date is None:
+            # undated: present but quiet.
+            color = DIM
+            bold = False
+            date_str = "    —     "
+        elif t.is_overdue:
+            # Past
+            color = BLUE
+            bold = False
+            date_str = t.next_action_date.isoformat()
+        elif t.next_action_date == today:
+            # Today: maximum attention.
+            color = GREEN
+            bold = False
+            date_str = t.next_action_date.isoformat()
+        else:
+            # Future: calm, visible.
+            color = DIM if (t.next_action_date - today).days <= 7 else ""
+            bold = False
+            date_str = t.next_action_date.isoformat()
+
+        def style(s: str) -> str:
+            out = s
+            if color:
+                out = c(color, out)
+            if bold:
+                out = c(BOLD, out)
+            return out
+
+        date_col = style(date_str)
+        jd_col = style(f"{t.jd_id:<{jd_w}}")
+        name_col = style(f"{t.name:<{name_w}}")
         action = t.next_action or ""
-        lines.append(
-            f"{marker} {date_str}  {t.folder_name:<{name_w}}  [{t.status:<{status_w}}]  {action}"
-        )
+        lines.append(f"{date_col}  {jd_col}  {name_col}  [{t.status:<{status_w}}]  {action}")
     return "\n".join(lines)
 
-
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("Usage: vault-tasks.py <prospects_dir>", file=sys.stderr)
+    if len(sys.argv) > 2:
+        print("Usage: vault-tasks.py [<dir>]", file=sys.stderr)
         return 2
-    prospects_dir = Path(sys.argv[1])
-    if not prospects_dir.is_dir():
-        print(f"Error: {prospects_dir} is not a directory", file=sys.stderr)
+    root = Path(sys.argv[1]) if len(sys.argv) == 2 else Path.cwd()
+    if not root.is_dir():
+        print(f"Error: {root} is not a directory", file=sys.stderr)
         return 1
-    tasks = load_tasks(prospects_dir)
-    print(format_tasks(tasks))
+    print(format_tasks(load_tasks(root)))
     return 0
 
 
