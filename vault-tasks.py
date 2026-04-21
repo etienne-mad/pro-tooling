@@ -38,6 +38,7 @@ RED = "31"
 GREEN = "32"
 YELLOW = "33"
 BLUE = "34"
+PURPLE = "35"
 DIM = "2"
 BOLD = "1"
 
@@ -110,7 +111,7 @@ def load_tasks(root: Path) -> list[Task]:
             Task(
                 jd_id=jd_id,
                 name=name,
-                status=str(fm.get("status", "?")),
+                status=str(fm.get("status", None)),
                 next_action_date=nad,
                 next_action=fm.get("next_action"),
             )
@@ -124,7 +125,6 @@ def format_tasks(tasks: list[Task]) -> str:
     today = date.today()
     jd_w = max(len(t.jd_id) for t in tasks)
     name_w = max(len(t.name) for t in tasks)
-    status_w = max(len(t.status) for t in tasks)
     lines = []
     for t in sorted(tasks, key=lambda x: x.sort_key):
         # Determine visual style by temporal category.
@@ -146,7 +146,7 @@ def format_tasks(tasks: list[Task]) -> str:
             date_str = t.next_action_date.isoformat()
         else:
             # Future: calm, visible.
-            color = DIM if (t.next_action_date - today).days <= 7 else ""
+            color = DIM # if (t.next_action_date - today).days <= 7 else ""
             bold = False
             date_str = t.next_action_date.isoformat()
 
@@ -162,7 +162,7 @@ def format_tasks(tasks: list[Task]) -> str:
         jd_col = style(f"{t.jd_id:<{jd_w}}")
         name_col = style(f"{t.name:<{name_w}}")
         action = t.next_action or ""
-        lines.append(f"{date_col}  {jd_col}  {name_col}  [{t.status:<{status_w}}]  {action}")
+        lines.append(f"{date_col}  {jd_col}  {name_col}  {action}")
     return "\n".join(lines)
 
 def main() -> int:
@@ -173,6 +173,7 @@ def main() -> int:
     if not root.is_dir():
         print(f"Error: {root} is not a directory", file=sys.stderr)
         return 1
+    print("dir=", c(PURPLE, str(root)))
     print(format_tasks(load_tasks(root)))
     return 0
 
