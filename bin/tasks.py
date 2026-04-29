@@ -26,7 +26,10 @@ from pathlib import Path
 import yaml
 
 _USE_COLOR = sys.stdout.isatty()
-
+_PRIORITY_LVL = {
+    "high": "🔥",
+    "low": "❄️",
+}
 
 def c(code: str, text: str) -> str:
     if not _USE_COLOR:
@@ -52,6 +55,7 @@ class Task:
     status: str
     next_action_date: date | None
     next_action: str | None
+    priority: str | None
 
     @property
     def is_overdue(self) -> bool:
@@ -114,6 +118,7 @@ def load_tasks(root: Path) -> list[Task]:
                 status=str(fm.get("status", None)),
                 next_action_date=nad,
                 next_action=fm.get("next_action"),
+                priority=fm.get("priority")
             )
         )
     return tasks
@@ -125,6 +130,7 @@ def format_tasks(tasks: list[Task]) -> str:
     today = date.today()
     jd_w = max(len(t.jd_id) for t in tasks)
     name_w = max(len(t.name) for t in tasks)
+    priority_w = 4
     lines = []
     for t in sorted(tasks, key=lambda x: x.sort_key):
         # Determine visual style by temporal category.
@@ -134,21 +140,27 @@ def format_tasks(tasks: list[Task]) -> str:
             color = DIM
             bold = False
             date_str = "    —     "
+            priority = t.priority if t.priority else ""
         elif t.is_overdue:
             # Past
             color = BLUE
             bold = False
             date_str = t.next_action_date.isoformat()
+            priority = _PRIORITY_LVL.get(t.priority if t.priority else "", "")
         elif t.next_action_date == today:
             # Today: maximum attention.
             color = GREEN
             bold = False
             date_str = t.next_action_date.isoformat()
+            priority = _PRIORITY_LVL.get(t.priority if t.priority else "", "")
         else:
             # Future: calm, visible.
             color = DIM # if (t.next_action_date - today).days <= 7 else ""
             bold = False
             date_str = t.next_action_date.isoformat()
+            priority = t.priority if t.priority else ""
+            
+
 
         def style(s: str) -> str:
             out = s
@@ -161,8 +173,9 @@ def format_tasks(tasks: list[Task]) -> str:
         date_col = style(date_str)
         jd_col = style(f"{t.jd_id:<{jd_w}}")
         name_col = style(f"{t.name:<{name_w}}")
+        priority = style(f"{priority:<{priority_w}}")
         action = t.next_action or ""
-        lines.append(f"{date_col}  {jd_col}  {name_col}  {action}")
+        lines.append(f"{date_col}  {jd_col}  {name_col} {priority}  {action}")
     return "\n".join(lines)
 
 def main() -> int:
