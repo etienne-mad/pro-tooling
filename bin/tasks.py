@@ -68,9 +68,10 @@ class Task:
     @property
     def sort_key(self) -> tuple[int, date, str]:
         # Dated first (by date), then undated (alphabetical by jd_id).
+        priority = self.priority if self.priority else ""
         if self.next_action_date is None:
-            return (1, date.max, self.jd_id)
-        return (0, self.next_action_date, self.jd_id)
+            return (1, date.max, priority, self.jd_id)
+        return (0, self.next_action_date, priority, self.jd_id)
 
 
 def parse_frontmatter(md_path: Path) -> dict | None:
