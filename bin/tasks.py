@@ -138,7 +138,10 @@ def format_tasks(tasks: list[Task]) -> str:
 
         if t.next_action_date is None:
             # undated: present but quiet.
-            color = DIM
+            if t.priority == "high":
+                color = PURPLE
+            else:
+                color = DIM
             bold = False
             date_str = "    —     "
             priority = t.priority if t.priority else ""
