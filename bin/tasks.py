@@ -33,6 +33,7 @@ from __future__ import annotations
 import calendar
 import re
 import sys
+import unicodedata
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -50,6 +51,35 @@ def c(code: str, text: str) -> str:
     if not _USE_COLOR:
         return text
     return f"\033[{code}m{text}\033[0m"
+
+
+def disp_width(s: str) -> int:
+    """Terminal column width of a string.
+
+    `len()` counts code points, not columns: emoji like 🔥 are one code point
+    but two columns, and a base char + U+FE0F variation selector is two code
+    points but two columns. Pad by this instead of `len` to keep columns aligned.
+    """
+    w = 0
+    i = 0
+    while i < len(s):
+        ch = s[i]
+        nxt = s[i + 1] if i + 1 < len(s) else ""
+        if nxt and ord(nxt) == 0xFE0F:  # emoji-presentation selector → 2 columns
+            w += 2
+            i += 2
+            continue
+        if ord(ch) >= 0x1F000 or unicodedata.east_asian_width(ch) in ("W", "F"):
+            w += 2
+        else:
+            w += 1
+        i += 1
+    return w
+
+
+def pad(s: str, width: int) -> str:
+    """Left-justify to a display width (column-aware, unlike str.ljust)."""
+    return s + " " * max(0, width - disp_width(s))
 
 
 GREEN = "32"
@@ -213,8 +243,8 @@ def format_tasks(tasks: list[Task]) -> str:
     if not tasks:
         return "No tasks found."
     today = date.today()
-    jd_w = max(len(t.jd_id) for t in tasks)
-    name_w = max(len(t.name) for t in tasks)
+    jd_w = max(disp_width(t.jd_id) for t in tasks)
+    name_w = max(disp_width(t.name) for t in tasks)
     priority_w = 4
     lines = []
     for t in sorted(tasks, key=lambda x: x.sort_key):
@@ -244,9 +274,9 @@ def format_tasks(tasks: list[Task]) -> str:
             return c(color, s) if color else s
 
         date_col = style(date_str)
-        jd_col = style(f"{t.jd_id:<{jd_w}}")
-        name_col = style(f"{t.name:<{name_w}}")
-        priority_col = style(f"{priority:<{priority_w}}")
+        jd_col = style(pad(t.jd_id, jd_w))
+        name_col = style(pad(t.name, name_w))
+        priority_col = style(pad(priority, priority_w))
         action = t.next_action or ""
         lines.append(f"{date_col}  {jd_col}  {name_col} {priority_col}  {action}")
     return "\n".join(lines)
