@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Check all pro-* repos for uncommitted changes and unpushed commits.
+# Check all ~/repos/* repos for uncommitted changes and unpushed commits.
 
-# for repo in "$HOME/repos/pro-"*; do
 for repo in "$HOME/repos/"*; do
     [ -d "$repo/.git" ] || continue
     name=$(basename "$repo")

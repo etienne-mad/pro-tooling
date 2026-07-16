@@ -16,6 +16,7 @@ Ajouter à la config shell (`~/.zshrc`, `~/.bashrc`, etc.) :
 
 ## Scripts
 
-- `tasks [dir]` — liste les notes avec `next_action` / `next_action_date`, triées par date. Scanne le vault par défaut, ou un sous-dossier si spécifié.
-- `check-repos.sh` — vérifie les repos `pro-*` pour modifications non committées et commits non poussés.
+- `tasks [dir]` — liste les notes avec `next_action` / `next_action_date` (+ tâches `recurring`), triées par date. Scanne le vault par défaut, ou un sous-dossier si spécifié.
+- `context <file|dir>...` — rassemble des fichiers en un bloc prêt à coller pour Claude (copié dans le presse-papier).
+- `check-repos.sh` — vérifie tous les repos `~/repos/*` pour modifications non committées et commits non poussés.
 - `sync-todos.sh` — crée les symlinks TODO dans les repos `pro-*` pointant vers les notes du vault (`98 External backlogs`).
