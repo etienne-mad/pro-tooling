@@ -47,7 +47,7 @@ _PRIORITY_LVL = {
     "high": "🔥",
     "low": "❄️",
 }
-
+_RECURRING_SYMBOL = "🔁"
 
 def c(code: str, text: str) -> str:
     if not _USE_COLOR:
@@ -208,7 +208,7 @@ def recurring_tasks(fm: dict, jd_id: str, name: str, src: str) -> list[Task]:
                 jd_id=jd_id,
                 name=name,
                 next_action_date=next_due,
-                next_action=f"↻ {entry['action']}",
+                next_action=f"{_RECURRING_SYMBOL} {entry['action']}",
                 priority=entry.get("priority"),
             )
         )
