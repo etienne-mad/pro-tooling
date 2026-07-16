@@ -25,11 +25,13 @@ today (never done yet). Marking one done = bumping its `last_done` in the note.
 Filename convention: '<JD-id> <Name>.md' where JD-id is e.g. '11.01' or '61.03'.
 
 Usage:
-    tasks.py [<dir>]    # defaults to current directory
+    tasks.py [<dir>]            # defaults to current directory
+    tasks.py --important [<dir>] # hide unscheduled, non-high-priority tasks
 """
 
 from __future__ import annotations
 
+import argparse
 import calendar
 import re
 import sys
@@ -282,16 +284,37 @@ def format_tasks(tasks: list[Task]) -> str:
     return "\n".join(lines)
 
 
+def is_important(t: Task) -> bool:
+    """A task is important if it is scheduled (has a date) or flagged high."""
+    return t.next_action_date is not None or t.priority == "high"
+
+
 def main() -> int:
-    if len(sys.argv) > 2:
-        print("Usage: tasks.py [<dir>]", file=sys.stderr)
-        return 2
-    root = Path(sys.argv[1]) if len(sys.argv) == 2 else Path.cwd()
+    parser = argparse.ArgumentParser(
+        description="List vault tasks, sorted by date.",
+    )
+    parser.add_argument(
+        "dir", nargs="?", default=".", help="directory to scan (default: current)"
+    )
+    parser.add_argument(
+        "-i",
+        "--important",
+        action="store_true",
+        help="hide unscheduled tasks that are not high priority",
+    )
+    args = parser.parse_args()
+
+    root = Path(args.dir)
     if not root.is_dir():
         print(f"Error: {root} is not a directory", file=sys.stderr)
         return 1
+
+    tasks = load_tasks(root)
+    if args.important:
+        tasks = [t for t in tasks if is_important(t)]
+
     print("dir=", c(PURPLE, str(root)))
-    print(format_tasks(load_tasks(root)))
+    print(format_tasks(tasks))
     return 0
 
 
